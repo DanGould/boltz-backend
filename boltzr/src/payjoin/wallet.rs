@@ -1,15 +1,15 @@
-use std::sync::Arc;
 use std::str::FromStr;
+use std::sync::Arc;
 
-use anyhow::{anyhow, Context, Result};
-use bitcoin::consensus::encode::{deserialize, serialize_hex};
+use anyhow::{Context, Result, anyhow};
 use bitcoin::consensus::Encodable;
+use bitcoin::consensus::encode::{deserialize, serialize_hex};
 use bitcoincore_rpc::{Auth, Client, RpcApi};
 use payjoin::bitcoin::psbt::Psbt;
-use payjoin::bitcoin::{
-    Address, Network, Script, Transaction, Txid,
-};
+use payjoin::bitcoin::{Address, Network, Script, Transaction, Txid};
 use payjoin::receive::InputPair;
+
+use crate::db::models::{ChainSwap, ChainSwapInfo};
 
 /// Implementation of PayjoinWallet for bitcoind
 #[derive(Clone, Debug)]
@@ -19,14 +19,16 @@ pub struct BitcoindWallet {
 
 impl BitcoindWallet {
     /// Create a new BitcoindWallet
-    /// 
+    ///
     /// FIXME get client from config argument
     pub fn new() -> Result<Self> {
         let client = Client::new(
             "127.0.0.1:18443/wallet/default",
             Auth::CookieFile("docker/regtest/data/core/cookies/.bitcoin-cookie".into()),
         )?;
-        Ok(Self { bitcoind: Arc::new(client) })
+        Ok(Self {
+            bitcoind: Arc::new(client),
+        })
     }
 }
 
@@ -74,8 +76,14 @@ impl BitcoindWallet {
     }
 
     /// Check if a script belongs to this wallet
-    pub fn is_mine(&self, script: &Script) -> Result<bool> {
+    /// HACK: checks directly against receive_address in the BIP21 URI
+    pub fn is_mine(&self, script: &Script, receive_address: Address) -> Result<bool> {
         if let Ok(address) = Address::from_script(script, self.network()?) {
+            // first check if address matches the receive address
+            if address == receive_address {
+                return Ok(true);
+            }
+            // then check bitcoind
             self.bitcoind
                 .get_address_info(&address)
                 .map(|info| info.is_mine.unwrap_or(false))
@@ -96,7 +104,10 @@ impl BitcoindWallet {
             .bitcoind
             .list_unspent(None, None, None, None, None)
             .context("Failed to list unspent")?;
-        Ok(unspent.into_iter().map(input_pair_from_list_unspent).collect())
+        Ok(unspent
+            .into_iter()
+            .map(input_pair_from_list_unspent)
+            .collect())
     }
 
     /// Get the network this wallet is operating on
@@ -126,7 +137,10 @@ pub fn input_pair_from_list_unspent(
         ..Default::default()
     };
     let txin = TxIn {
-        previous_output: OutPoint { txid: utxo.txid, vout: utxo.vout },
+        previous_output: OutPoint {
+            txid: utxo.txid,
+            vout: utxo.vout,
+        },
         ..Default::default()
     };
     InputPair::new(txin, psbtin).expect("Input pair should be valid")
@@ -138,7 +152,7 @@ mod test {
 
     /// Not much of a unit test but great for the hackathon
     /// make sure we can create a wallet with static config.
-    /// 
+    ///
     /// ENSURE boltz/regtest docker container is running before this test
     #[test]
     fn new_wallet() {

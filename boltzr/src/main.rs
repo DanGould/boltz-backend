@@ -9,6 +9,7 @@ use crate::service::Service;
 use crate::swap::manager::Manager;
 use api::ws;
 use clap::Parser;
+use payjoin::PayjoinReceiver;
 use serde::Serialize;
 use std::sync::Arc;
 use tokio::task;
@@ -25,13 +26,13 @@ mod evm;
 mod grpc;
 mod lightning;
 mod notifications;
+mod payjoin;
 mod service;
 mod swap;
 mod tracing_setup;
 mod utils;
 mod wallet;
 mod webhook;
-mod payjoin;
 
 #[cfg(feature = "metrics")]
 mod metrics;
@@ -265,12 +266,19 @@ async fn main() {
         }
     };
 
+    let payjoin_receiver = Arc::new(
+        PayjoinReceiver::new()
+            .await
+            .expect("Failed to initialize PayjoinReceiver"),
+    );
+
     let mut grpc_server = grpc::server::Server::new(
         cancellation_token.clone(),
         config.sidecar.grpc,
         log_reload_handler,
         service.clone(),
         swap_manager.clone(),
+        payjoin_receiver.clone(),
         swap_status_update_tx.clone(),
         Box::new(db::helpers::web_hook::WebHookHelperDatabase::new(db_pool)),
         web_hook_status_caller,
