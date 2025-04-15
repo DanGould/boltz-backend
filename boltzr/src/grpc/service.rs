@@ -19,11 +19,13 @@ use crate::grpc::service::boltzr::{
 use crate::grpc::status_fetcher::StatusFetcher;
 use crate::lightning::invoice::Invoice;
 use crate::notifications::NotificationClient;
+use crate::payjoin::receive_payjoin_adapter;
 use crate::service::Service;
 use crate::swap::manager::SwapManager;
 use crate::tracing_setup::ReloadHandler;
 use crate::webhook::status_caller::StatusCaller;
 use alloy::primitives::{Address, FixedBytes};
+use boltzr::{GetPayjoinUriRequest, GetPayjoinUriResponse};
 use futures::StreamExt;
 use lightning::blinded_path::IntroductionNode;
 use lightning::offers::offer::Amount;
@@ -699,6 +701,23 @@ where
         Ok(Response::new(ScanMempoolResponse {
             transactions: transaction_serialized,
         }))
+    }
+
+    #[instrument(name = "grpc::get_payjoin_uri", skip_all)]
+    async fn get_payjoin_uri(
+        &self,
+        request: Request<GetPayjoinUriRequest>,
+    ) -> Result<Response<GetPayjoinUriResponse>, Status> {
+        extract_parent_context(&request);
+
+        let params = request.into_inner();
+        let res = match receive_payjoin_adapter(params.address, params.satoshis, params.label).await
+        {
+            Ok(uri) => uri,
+            Err(err) => return Err(Status::new(Code::Internal, err.to_string())),
+        };
+
+        Ok(Response::new(GetPayjoinUriResponse { uri: res }))
     }
 }
 

@@ -18,6 +18,17 @@ const DIRECTORY: &str = "https://payjo.in";
 
 struct PayjoinReceiver {}
 
+/// Initialize a payjoin from a gRPC request
+/// 
+/// Return the Payjoin Uri as a string
+pub async fn receive_payjoin_adapter<'a>(address: String, sats: Option<u64>, label: Option<String>) -> Result<String> {
+    let address = Address::from_str(&address)?  
+        .assume_checked();
+    let amount = sats.map(|s| Amount::from_sat(s));
+    let pj_uri = receive_payjoin(address, amount, label).await?;
+    Ok(pj_uri.to_string())
+}
+
 /// Receive a payjoin request and return the Payjoin Uri
 async fn receive_payjoin<'a>(address: Address, amount: Option<Amount>, label: Option<String>) -> Result<payjoin::PjUri<'a>> {
     let ohttp_keys = payjoin::io::fetch_ohttp_keys(OHTTP_RELAY,DIRECTORY).await?;
